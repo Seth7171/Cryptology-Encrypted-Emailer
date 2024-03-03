@@ -1,18 +1,11 @@
-import ctypes
 import sys
 from PyQt6.QtWidgets import QApplication, QWidget, QVBoxLayout, QHBoxLayout, QLabel, QLineEdit, QTextEdit, QPushButton, \
     QSplashScreen
 from PyQt6.QtGui import QPixmap
 from PyQt6.QtCore import Qt
 
-# Load the shared library
-cobra_lib = ctypes.CDLL('./cobraImplementation/libcobra128.so')
-
-# Define the argument types for the setup, crypt, and decrypt functions
-cobra_lib.setup.argtypes = [ctypes.POINTER(ctypes.c_ubyte * 72)]
-cobra_lib.crypt.argtypes = [ctypes.POINTER(ctypes.c_uint32 * 4)]
-cobra_lib.decrypt.argtypes = [ctypes.POINTER(ctypes.c_uint32 * 4)]
-
+from BlowFish import blowfish
+import base64
 
 class EmailSenderGUI(QWidget):
     def __init__(self):
@@ -58,45 +51,53 @@ class EmailSenderGUI(QWidget):
         # Set the layout on the application's window
         self.setLayout(mainLayout)
 
+    def pkcs7_pad(self,data, block_size):
+        padding_len = block_size - (len(data) % block_size)
+        padding = bytes([padding_len] * padding_len)
+        return data + padding
+
+    def pkcs7_unpad(self, data):
+        padding_len = data[-1]
+        if padding_len > len(data):
+            raise ValueError("Invalid padding")
+        return data[:-padding_len]
+
+    def encrypt_text_with_blowfish(self, text):
+        text_bytes = text.encode('utf-8')
+        padded_text_bytes = self.pkcs7_pad(text_bytes, 8)  # Blowfish block size is 8 bytes
+        # Apply padding here to make text_bytes a multiple of 8 bytes if necessary
+
+        encrypted_blocks = []
+        for i in range(0, len(padded_text_bytes), 8):
+            block = padded_text_bytes[i:i + 8]
+            block_int = int.from_bytes(block, byteorder='big')
+            encrypted_block_int = blowfish.encrypt(block_int)
+            encrypted_blocks.append(encrypted_block_int.to_bytes(8, byteorder='big'))
+
+        encrypted_data = b''.join(encrypted_blocks)
+        encrypted_base64 = base64.b64encode(encrypted_data).decode('utf-8')
+        return encrypted_base64
+
+    def decrypt_text_with_blowfish(self, encrypted_base64):
+        encrypted_data = base64.b64decode(encrypted_base64)
+        decrypted_blocks = []
+        for i in range(0, len(encrypted_data), 8):
+            block = encrypted_data[i:i + 8]
+            block_int = int.from_bytes(block, byteorder='big')
+            decrypted_block_int = blowfish.decrypt(block_int)
+            decrypted_blocks.append(decrypted_block_int.to_bytes(8, byteorder='big'))
+
+        decrypted_data = b''.join(decrypted_blocks)
+        decrypted_data = self.pkcs7_unpad(decrypted_data)
+        return decrypted_data.decode('utf-8')
+
     def sendEmail(self):
         print("Starting email sending process...")
-
-        # Dummy key for demonstration. Replace with your actual key material.
-        key_material = (ctypes.c_ubyte * 72)(*([0] * 72))
-        cobra_lib.setup(key_material)
-
-        message_text = self.bodyTextEdit.toPlainText()
-        message_bytes = message_text.encode('utf-8')
-
-        # Pad the message_bytes to match the block size (16 bytes for Cobra128)
-        pad_length = 16 - len(message_bytes) % 16
-        padded_message = message_bytes + b'\x00' * pad_length
-        print(f"Padded message bytes: {padded_message}")
-
-        if len(padded_message) % 16 != 0:
-            print("Message padding error.")
-            return
-
-        # Prepare the message block for encryption
-        message_block = (ctypes.c_uint32 * 4)(
-            int.from_bytes(padded_message[0:4], 'big'),
-            int.from_bytes(padded_message[4:8], 'big'),
-            int.from_bytes(padded_message[8:12], 'big'),
-            int.from_bytes(padded_message[12:16], 'big'),
-        )
-        print(f"Message block (before encryption): {[hex(x) for x in message_block]}")
-
-        # Encrypt the block
-        cobra_lib.crypt(message_block)
-        print(f"Encrypted message block: {[hex(x) for x in message_block]}")
-
-        # Decrypt the block for demonstration
-        cobra_lib.decrypt(message_block)
-        decrypted_bytes = bytearray()
-        for value in message_block:
-            decrypted_bytes.extend(value.to_bytes(4, 'big'))
-        decrypted_text = decrypted_bytes.rstrip(b'\x00').decode('utf-8')
-        print(f"Decrypted text: {decrypted_text}")
+        plaintext = self.bodyTextEdit.toPlainText()
+        encrypted = self.encrypt_text_with_blowfish(plaintext)
+        print("Encrypted:", encrypted)
+        decrypted = self.decrypt_text_with_blowfish(encrypted)
+        print("Decrypted:", decrypted)
 
 
 def main():
