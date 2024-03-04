@@ -1,13 +1,15 @@
 # cryptology-encrypted-emailer
 A program to send encrypted emails using cobra cypher
 
+
 ## Key generation
 * key is generated at random every UI_with_websocket_client.py rerun
 
 ## Running the program:
-* run the websockets/server/websocket_server.py file
-* run the UI_with_websocket_client.py file
-* send messages to the server
+* Run the following command: `pip install PyQt6 base64 websockets`
+* Run the websockets/server/websocket_server.py file
+* Run the UI_with_websocket_client.py file
+* Send messages to the server
 \
 Note: 
   * Currently only the body block is being encrypted and sent.
