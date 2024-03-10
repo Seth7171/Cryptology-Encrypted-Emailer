@@ -1,7 +1,6 @@
 import base64
 import json
 import os
-import shutil
 import sys
 import uuid
 import random
@@ -78,6 +77,7 @@ class EmailSenderGUI(QWidget):
         self.credentials_thread.started.connect(self.send_credentials)
 
     def triggerSendMessage(self):
+        # Ensure this method correctly triggers sending the encrypted message
         message = {
             "subject": self.subjectLineEdit.text(),
             "message": self.bodyTextEdit.toPlainText()
@@ -277,11 +277,34 @@ class EmailSenderGUI(QWidget):
         try:
             with open(file_path, 'r') as file:
                 email = json.load(file)
-
                 # Display the email's details
-                self.toLineEdit.setText(email.get('from', ''))
-                self.subjectLineEdit.setText(email.get('subject', ''))
-                self.bodyTextEdit.setPlainText(email.get('message', ''))
+                self.toLineEdit.setText(email.get('to', ''))
+
+                blowfish_key = email['elgamal_encrypted_blowfish_key']
+
+                decrypted_blowfish_key = self.elgamal_decrypter.decrypt(int(blowfish_key[0]),
+                                                                        int(blowfish_key[1]),
+                                                                        int(blowfish_key[2]),
+                                                                        int(blowfish_key[3]))
+
+                print(email.get('elgamal_encrypted_blowfish_key'))
+                print("Decrypted key from display emails: " + str(decrypted_blowfish_key))
+
+                if self.rabin_verify(email['dig_sign_elgamal_key'],
+                                     str(blowfish_key[0]) + ";" +
+                                     str(blowfish_key[1]) + ";" +
+                                     str(blowfish_key[2]) + ";" +
+                                     str(blowfish_key[3])) and self.rabin_verify(email['dig_sign_blowfish_message'], email['msg']):
+                    print("both signatures valid")
+
+                    blowfish.init(blowfish.int_to_key(decrypted_blowfish_key))
+                    decrypted_message = blowfish.decrypt_text_with_blowfish(email['msg'])
+                    decrypted_json_message = json.loads(decrypted_message)
+                    self.subjectLineEdit.setText(decrypted_json_message['subject'])
+                    self.bodyTextEdit.setPlainText(decrypted_json_message['message'])
+                else:
+                    print("Elgamal or message signature is not valid...")
+
                 file.close()
 
         except Exception as e:
@@ -327,19 +350,8 @@ class EmailSenderGUI(QWidget):
         return self.rabin_verifier.verify(signature, message)
 
 
-def clean_email_resources():
-    directory = "resources/emails"
-    try:
-        shutil.rmtree(directory)  # Remove the directory and all its contents
-        os.makedirs(directory)  # Recreate the directory if you need it empty upon the next application start
-        print("Email resources cleaned up successfully.")
-    except Exception as e:
-        print(f"Error cleaning up email resources: {e}")
-
-
 def main():
     app = QApplication(sys.argv)
-    app.aboutToQuit.connect(clean_email_resources)
     # Simulate some load time
     # app.processEvents()
     window = EmailSenderGUI()

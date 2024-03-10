@@ -1,9 +1,6 @@
 import os
 import base64
 
-import env
-from EccElGamal import elgamal_class
-
 p = [
     0x243F6A88, 0x85A308D3, 0x13198A2E, 0x03707344,
     0xA4093822, 0x299F31D0, 0x082EFA98, 0xEC4E6C89,
@@ -279,169 +276,131 @@ s = [
     ]
 ]
 
-key = [ 0x4B7A70E9, 0xB5B32944, 0xDB75092E, 0xC4192623,
-        0xAD6EA6B0, 0x49A7DF7D, 0x9CEE60B8, 0x8FEDB266,
-        0xECAA8C71, 0x699A17FF, 0x5664526C, 0xC2B19EE1,
-        0x193602A5, 0x75094C29]
+class BlowfishEncryptor:
+    def __init__(self, debug=False):
+        self.debug = debug
+        self.p = p
+        self.s = s
+        self.key = None
 
+    def genKey(self, key_size=56):
+        return os.urandom(key_size)
 
-key = None
+    def printKeyInFormat(self, key):
+        key_parts = [int.from_bytes(key[i:i+4], byteorder='big') for i in range(0, len(key), 4)]
+        if self.debug:
+            print("key = [", end="")
+            for i, part in enumerate(key_parts):
+                if i != len(key_parts) - 1:
+                    print(f" 0x{part:08X},", end="")
+                else:
+                    print(f" 0x{part:08X}", end="")
+                if i % 4 == 3:
+                    print()
+            print("]")
 
-"""
-Generates a random key for Blowfish encryption.
+    def swap(self, a, b):
+        return b, a
 
-Parameters:
-key_size (int): The size of the key in bytes. The maximum size for Blowfish is 56 bytes.
+    def init(self, dec_key=None):
+        global key
+        key = self.genKey() if dec_key is None else dec_key
 
-Returns:
-bytes: A bytes object containing the key.
-"""
+        for i in range(0, 18):
+            p[i] = p[i] ^ key[i % 14]
+        k = 0
+        data = 0
+        for i in range(0, 9):
+            temp = self.encrypt(data)
+            p[k] = temp >> 32
+            k += 1
+            p[k] = temp & 0xffffffff
+            k += 1
+            data = temp
 
-def genKey(key_size=56):
-    return os.urandom(key_size)
+    def encrypt(self, data):
+        L = data >> 32
+        R = data & 0xffffffff
+        for i in range(0, 16):
+            L = p[i] ^ L
+            L1 = self.func(L)
+            R = R ^ self.func(L1)
+            L, R = self.swap(L, R)
+        L, R = self.swap(L, R)
+        L = L ^ p[17]
+        R = R ^ p[16]
+        encrypted = (L << 32) ^ R
+        return encrypted
 
+    def decrypt(self, data):
+        L = data >> 32
+        R = data & 0xffffffff
+        for i in range(17, 1, -1):
+            L = p[i] ^ L
+            L1 = self.func(L)
+            R = R ^ self.func(L1)
+            L, R = self.swap(L, R)
+        L, R = self.swap(L, R)
+        L = L ^ p[0]
+        R = R ^ p[1]
+        decrypted_data1 = (L << 32) ^ R
+        return decrypted_data1
 
+    def func(self, L):
+        temp = s[0][L >> 24]
+        temp = (temp + s[1][L >> 16 & 0xff]) % 2 ** 32
+        temp = temp ^ s[2][L >> 8 & 0xff]
+        temp = (temp + s[3][L & 0xff]) % 2 ** 32
+        return temp
 
-"""
-Prints the given key in a specific format, with each key part being a 32-bit integer in hexadecimal.
+    def pkcs7_pad(self, data, block_size):
+        padding_len = block_size - (len(data) % block_size)
+        padding = bytes([padding_len] * padding_len)
+        return data + padding
 
-Parameters:
-key (bytes): The key to print, expected to be a bytes object.
-"""
-def printKeyInFormat(key):
-    # Split the key into 4-byte chunks and convert each to an integer
-    key_parts = [int.from_bytes(key[i:i+4], byteorder='big') for i in range(0, len(key), 4)]
+    def pkcs7_unpad(self, data):
+        print("Unpadding: ")
+        print(data)
+        padding_len = data[-1]
+        if padding_len > len(data):
+            raise ValueError("Invalid padding")
+        return data[:-padding_len]
 
-    # Print the key parts in the desired format
-    if env.debug:
-        print("key = [", end="")
-        for i, part in enumerate(key_parts):
-            # Print each part as hexadecimal, followed by a comma and a newline for all but the last part
-            if i != len(key_parts) - 1:
-                print(f" 0x{part:08X},", end="")
-            else:
-                print(f" 0x{part:08X}", end="")
-            if i % 4 == 3:
-                print()
-        print("]")
+    def decrypt_text_with_blowfish(self, encrypted_base64):
+        encrypted_data = base64.b64decode(encrypted_base64)
+        decrypted_blocks = []
+        for i in range(0, len(encrypted_data), 8):
+            block = encrypted_data[i:i + 8]
+            block_int = int.from_bytes(block, byteorder='big')
+            decrypted_block_int = self.decrypt(block_int)
+            decrypted_blocks.append(decrypted_block_int.to_bytes(8, byteorder='big'))
 
-# key = genKey()
+        decrypted_data = b''.join(decrypted_blocks)
+        decrypted_data = self.pkcs7_unpad(decrypted_data)
+        print("Blowfish decrypted: ")
+        print(decrypted_data)
+        return decrypted_data.decode('utf-8')
 
+    def encrypt_text_with_blowfish(self, text):
+        text_bytes = text.encode('utf-8')
+        padded_text_bytes = self.pkcs7_pad(text_bytes, 8)  # Blowfish block size is 8 bytes
+        # Apply padding here to make text_bytes a multiple of 8 bytes if necessary
 
-def swap(a, b):
-    temp = a
-    a = b
-    b = temp
-    return a, b
+        encrypted_blocks = []
+        for i in range(0, len(padded_text_bytes), 8):
+            block = padded_text_bytes[i:i + 8]
+            block_int = int.from_bytes(block, byteorder='big')
+            encrypted_block_int = self.encrypt(block_int)
+            encrypted_blocks.append(encrypted_block_int.to_bytes(8, byteorder='big'))
 
+        encrypted_data = b''.join(encrypted_blocks)
+        encrypted_base64 = base64.b64encode(encrypted_data).decode('utf-8')
+        print("Blowfish encrypted: ")
+        print(encrypted_base64)
+        return encrypted_base64
 
-def init(dec_key=None):
-    global key
-    key = genKey() if dec_key is None else dec_key
+    def key_as_int(self):
+        return int.from_bytes(self.key, 'big')
 
-    for i in range(0, 18):
-        p[i] = p[i] ^ key[i % 14]
-    k = 0
-    data = 0
-    for i in range(0, 9):
-        temp = encrypt(data)
-        p[k] = temp >> 32
-        k += 1
-        p[k] = temp & 0xffffffff
-        k += 1
-        data = temp
-    # encrypt_data = int(input("Enter data to encrypt: "))
-    # encrypted_data = encryption(encrypt_data)
-    # print("Encrypted data : ",encrypted_data)
-    # decrypted_data = decryption(encrypted_data)
-    # print("Decrypted data : ",decrypted_data)
-
-
-def encrypt(data):
-    L = data >> 32
-    R = data & 0xffffffff
-    for i in range(0, 16):
-        L = p[i] ^ L
-        L1 = func(L)
-        R = R ^ func(L1)
-        L, R = swap(L, R)
-    L, R = swap(L, R)
-    L = L ^ p[17]
-    R = R ^ p[16]
-    encrypted = (L << 32) ^ R
-    return encrypted
-
-
-def func(L):
-    temp = s[0][L >> 24]
-    temp = (temp + s[1][L >> 16 & 0xff]) % 2 ** 32
-    temp = temp ^ s[2][L >> 8 & 0xff]
-    temp = (temp + s[3][L & 0xff]) % 2 ** 32
-    return temp
-
-
-def decrypt(data):
-    L = data >> 32
-    R = data & 0xffffffff
-    for i in range(17, 1, -1):
-        L = p[i] ^ L
-        L1 = func(L)
-        R = R ^ func(L1)
-        L, R = swap(L, R)
-    L, R = swap(L, R)
-    L = L ^ p[0]
-    R = R ^ p[1]
-    decrypted_data1 = (L << 32) ^ R
-    return decrypted_data1
-
-def pkcs7_pad(data, block_size):
-    padding_len = block_size - (len(data) % block_size)
-    padding = bytes([padding_len] * padding_len)
-    return data + padding
-
-def pkcs7_unpad(data):
-    print("Unpadding: ")
-    print(data)
-    padding_len = data[-1]
-    if padding_len > len(data):
-        raise ValueError("Invalid padding")
-    return data[:-padding_len]
-
-def decrypt_text_with_blowfish(encrypted_base64):
-    encrypted_data = base64.b64decode(encrypted_base64)
-    decrypted_blocks = []
-    for i in range(0, len(encrypted_data), 8):
-        block = encrypted_data[i:i + 8]
-        block_int = int.from_bytes(block, byteorder='big')
-        decrypted_block_int = decrypt(block_int)
-        decrypted_blocks.append(decrypted_block_int.to_bytes(8, byteorder='big'))
-
-    decrypted_data = b''.join(decrypted_blocks)
-    decrypted_data = pkcs7_unpad(decrypted_data)
-    print("Blowfish decrypted: ")
-    print(decrypted_data)
-    return decrypted_data.decode('utf-8')
-
-def encrypt_text_with_blowfish(text):
-    text_bytes = text.encode('utf-8')
-    padded_text_bytes = pkcs7_pad(text_bytes, 8)  # Blowfish block size is 8 bytes
-    # Apply padding here to make text_bytes a multiple of 8 bytes if necessary
-
-    encrypted_blocks = []
-    for i in range(0, len(padded_text_bytes), 8):
-        block = padded_text_bytes[i:i + 8]
-        block_int = int.from_bytes(block, byteorder='big')
-        encrypted_block_int = encrypt(block_int)
-        encrypted_blocks.append(encrypted_block_int.to_bytes(8, byteorder='big'))
-
-    encrypted_data = b''.join(encrypted_blocks)
-    encrypted_base64 = base64.b64encode(encrypted_data).decode('utf-8')
-    print("Blowfish encrypted: ")
-    print(encrypted_base64)
-    return encrypted_base64
-
-def key_as_int():
-    return int.from_bytes(key, 'big')
-def int_to_key(integer, key_size=56):
-    # The number of bytes is the key_size. The 'big' argument specifies the byte order.
-    return integer.to_bytes(key_size, 'big')
+    def int_to_key(self, integer, key_size=56):
+        return integer.to_bytes(key_size, 'big')
