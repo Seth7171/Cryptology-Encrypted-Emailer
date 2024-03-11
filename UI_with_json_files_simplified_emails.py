@@ -240,7 +240,7 @@ class EmailSenderGUI(QWidget):
 
         self.load_other_user_credentials()
         base_path = 'resources/emails/'
-        self.emailListWidget.clear()  # Clear existing items before loading new ones
+        self.emailListWidget.clear()
 
         # Check if the base path exists
         if not os.path.exists(base_path):
@@ -254,10 +254,8 @@ class EmailSenderGUI(QWidget):
                     try:
                         with open(file_path, 'r') as f:
                             email = json.load(f)
+
                             # Check if the 'to' field matches self.user
-
-
-
                             if email.get('to') == self.user:
 
                                 if 'decrypted' in email:
@@ -285,6 +283,7 @@ class EmailSenderGUI(QWidget):
 
                                     blowfish.init(blowfish.int_to_key(decrypted_blowfish_key))
                                     decrypted_message = blowfish.decrypt_text_with_blowfish(email['msg'])
+                                    print(f'received key for {self.user} :{blowfish.int_to_key(decrypted_blowfish_key)}')
                                     decrypted_json_message = json.loads(decrypted_message)
                                     email_entry = f"(secure) {decrypted_json_message['subject']} - from {email['from']}"
 
