@@ -303,7 +303,8 @@ bytes: A bytes object containing the key.
 def genKey(key_size=56):
     return os.urandom(key_size)
 
-
+def generate_iv(block_size=8):
+    return os.urandom(block_size)
 
 """
 Prints the given key in a specific format, with each key part being a 32-bit integer in hexadecimal.
@@ -410,36 +411,68 @@ def pkcs7_unpad(data):
         raise ValueError("Invalid padding")
     return data[:-padding_len]
 
-def decrypt_text_with_blowfish(encrypted_base64):
-    encrypted_data = base64.b64decode(encrypted_base64)
-    decrypted_blocks = []
-    for i in range(0, len(encrypted_data), 8):
-        block = encrypted_data[i:i + 8]
-        block_int = int.from_bytes(block, byteorder='big')
-        decrypted_block_int = decrypt(block_int)
-        decrypted_blocks.append(decrypted_block_int.to_bytes(8, byteorder='big'))
+def decrypt_with_ofb(encrypted_bytes, iv):
+    """Decrypt data using OFB mode. OFB decryption is symmetric to encryption."""
+    return encrypt_with_ofb(encrypted_bytes, iv)
 
-    decrypted_data = b''.join(decrypted_blocks)
+def decrypt_text_with_blowfish(encrypted_base64):
+    # encrypted_data = base64.b64decode(encrypted_base64)
+    # decrypted_blocks = []
+    # for i in range(0, len(encrypted_data), 8):
+    #     block = encrypted_data[i:i + 8]
+    #     block_int = int.from_bytes(block, byteorder='big')
+    #     decrypted_block_int = decrypt(block_int)
+    #     decrypted_blocks.append(decrypted_block_int.to_bytes(8, byteorder='big'))
+
+    encrypted_data_with_iv = base64.b64decode(encrypted_base64)
+    iv = encrypted_data_with_iv[:8]
+    encrypted_data = encrypted_data_with_iv[8:]
+
+    # decrypted_data = b''.join(decrypted_blocks)
+    decrypted_data = decrypt_with_ofb(encrypted_data, iv)
+
     decrypted_data = pkcs7_unpad(decrypted_data)
     print("Blowfish decrypted: ")
     print(decrypted_data)
     return decrypted_data.decode('utf-8')
 
+def encrypt_with_ofb(plaintext_bytes, iv):
+    """Encrypt data using OFB mode."""
+    encrypted_data = bytearray()
+    previous_block = iv
+
+    for i in range(0, len(plaintext_bytes), 8):
+        keystream_block = encrypt(int.from_bytes(previous_block, byteorder='big'))
+        keystream_bytes = keystream_block.to_bytes(8, byteorder='big')
+
+        block = plaintext_bytes[i:i+8]
+        encrypted_block = bytes(a ^ b for a, b in zip(block, keystream_bytes))
+        encrypted_data.extend(encrypted_block)
+
+        previous_block = keystream_bytes
+
+    return encrypted_data
 
 def encrypt_text_with_blowfish(text):
+    iv = generate_iv()
     text_bytes = text.encode('utf-8')
     padded_text_bytes = pkcs7_pad(text_bytes, 8)  # Blowfish block size is 8 bytes
     # Apply padding here to make text_bytes a multiple of 8 bytes if necessary
 
-    encrypted_blocks = []
-    for i in range(0, len(padded_text_bytes), 8):
-        block = padded_text_bytes[i:i + 8]
-        block_int = int.from_bytes(block, byteorder='big')
-        encrypted_block_int = encrypt(block_int)
-        encrypted_blocks.append(encrypted_block_int.to_bytes(8, byteorder='big'))
+    # encrypted_blocks = []
+    # for i in range(0, len(padded_text_bytes), 8):
+    #     block = padded_text_bytes[i:i + 8]
+    #     block_int = int.from_bytes(block, byteorder='big')
+    #     encrypted_block_int = encrypt(block_int)
+    #     encrypted_blocks.append(encrypted_block_int.to_bytes(8, byteorder='big'))
+    #
+    # encrypted_data = b''.join(encrypted_blocks)
+    # encrypted_base64 = base64.b64encode(encrypted_data).decode('utf-8')
 
-    encrypted_data = b''.join(encrypted_blocks)
-    encrypted_base64 = base64.b64encode(encrypted_data).decode('utf-8')
+    encrypted_data = encrypt_with_ofb(padded_text_bytes, iv)
+    encrypted_data_with_iv = iv + encrypted_data
+    encrypted_base64 = base64.b64encode(encrypted_data_with_iv).decode('utf-8')
+
     print("Blowfish encrypted: ")
     print(encrypted_base64)
     return encrypted_base64
