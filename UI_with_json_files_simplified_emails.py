@@ -7,7 +7,7 @@ import uuid
 import random
 import traceback
 
-from PyQt6.QtCore import QThread, Qt
+from PyQt6.QtCore import QThread, Qt, QObject, pyqtSignal
 from PyQt6.QtWidgets import QApplication, QWidget, QVBoxLayout, QHBoxLayout, QLabel, QLineEdit, QTextEdit, QPushButton, \
     QListWidget, QListWidgetItem
 
@@ -33,7 +33,6 @@ def digital_signature(rabin_signature, msg):
     return signature
 
 
-# TODO: potential fail point
 def encrypt_key(ecc):
     print("Encrypting blowfish key with el-gamal")
     print("last email key: ", blowfish.key_as_int())
@@ -44,48 +43,21 @@ def encrypt_key(ecc):
     return C1x, C1y, C2x, C2y
 
 
-class EmailSenderGUI(QWidget):
-    def __init__(self):
+class EmailWorker(QObject):
+    finished = pyqtSignal()  # Signal to indicate the work is done
+
+    def __init__(self, message_details, elgamal_decrypter, rabin_signer, user, toLineEdit):
         super().__init__()
-        # Encryption data
-        self.rabin_public_key = None
-        self.rabin_signed_elgamal_key = None
-        self.rabin_signer = SignatureScheme()
-        self.rabin_verifier = SignatureScheme()
-        # TODO: ElgamalEncryption should be recreated each time we refresh the list and get the n from the other side
-        self.elgamal_encrypter = None
-        ###
+        self.message = message_details
+        self.elgamal_decrypter = elgamal_decrypter
+        self.rabin_signer = rabin_signer
+        self.user = user
+        self.toLineEdit = toLineEdit
 
-        self.elgamal_decrypter = ElgamalEncryption()
-
-        # Decryption data
-        self.rabin_verification_public_key = None
-        self.decryption_public_elgamal_key = None
-
-        # Threads
-        self.credentials_thread = QThread()
-        self.email_thread = QThread()
-        self.setupWorkerAndThread()
-
-        # Utility
-        self.user = sys.argv[1] if len(sys.argv) > 1 else "default_user"
-        self.initUI()
-        self.load_emails()
-        self.setWindowFlag(Qt.WindowType.WindowStaysOnTopHint, True)
-
-    def setupWorkerAndThread(self):
-        self.email_thread.started.connect(self.triggerSendMessage)
-        self.credentials_thread.started.connect(self.send_credentials)
-
-    def triggerSendMessage(self):
-        message = {
-            "subject": self.subjectLineEdit.text(),
-            "message": self.bodyTextEdit.toPlainText()
-        }
-        json_message = json.dumps(message)
+    def send_email(self):
+        json_message = json.dumps(self.message)
 
         blowfish.init()
-        self.load_other_user_credentials()
         elgamal_encrypted_blowfish_key = encrypt_key(self.elgamal_decrypter)
 
         digitally_signed_elgamal_key = digital_signature(self.rabin_signer,
@@ -97,7 +69,6 @@ class EmailSenderGUI(QWidget):
         encrypted_message = blowfish.encrypt_text_with_blowfish(json_message)
 
         digitally_signed_blowfish_message = digital_signature(self.rabin_signer, encrypted_message)
-
 
         header = {
             "from": self.user,
@@ -112,6 +83,81 @@ class EmailSenderGUI(QWidget):
         email_file_path = f'resources/emails/{self.user}/email{str(email_id)[-4:]}.json'
         save_message_to_json(header, email_file_path)
         print("Email sent")
+
+        # Simulate email sending logic
+        print(f"Sending email to: {self.toLineEdit.text()}")
+
+        # Emit the finished signal when done
+        self.finished.emit()
+
+
+class EmailSenderGUI(QWidget):
+    def __init__(self):
+        super().__init__()
+        # Encryption data
+        self.rabin_public_key = None
+        self.rabin_signed_elgamal_key = None
+        self.rabin_signer = SignatureScheme()
+        self.rabin_verifier = SignatureScheme()
+        self.elgamal_encrypter = None
+        ###
+
+        self.elgamal_decrypter = ElgamalEncryption()
+
+        # Decryption data
+        self.rabin_verification_public_key = None
+        self.decryption_public_elgamal_key = None
+
+        # Threads
+        self.credentials_thread = QThread()
+        self.email_thread = QThread()
+        # self.setupWorkerAndThread()
+
+        # Utility
+        self.user = sys.argv[1] if len(sys.argv) > 1 else "default_user"
+        self.initUI()
+        self.load_emails()
+        self.setWindowFlag(Qt.WindowType.WindowStaysOnTopHint, True)
+
+    # def setupWorkerAndThread(self):
+    #     self.email_thread.started.connect(self.triggerSendMessage)
+    #     self.credentials_thread.started.connect(self.send_credentials)
+
+    # def triggerSendMessage(self):
+    #     message = {
+    #         "subject": self.subjectLineEdit.text(),
+    #         "message": self.bodyTextEdit.toPlainText()
+    #     }
+    #
+    #     json_message = json.dumps(message)
+    #
+    #     blowfish.init()
+    #     self.load_other_user_credentials()
+    #     elgamal_encrypted_blowfish_key = encrypt_key(self.elgamal_decrypter)
+    #
+    #     digitally_signed_elgamal_key = digital_signature(self.rabin_signer,
+    #                                                    str(elgamal_encrypted_blowfish_key[0]) + ";"
+    #                                                  + str(elgamal_encrypted_blowfish_key[1]) + ";"
+    #                                                  + str(elgamal_encrypted_blowfish_key[2]) + ";"
+    #                                                  + str(elgamal_encrypted_blowfish_key[3]))
+    #
+    #     encrypted_message = blowfish.encrypt_text_with_blowfish(json_message)
+    #
+    #     digitally_signed_blowfish_message = digital_signature(self.rabin_signer, encrypted_message)
+    #
+    #     header = {
+    #         "from": self.user,
+    #         "to": self.toLineEdit.text(),
+    #         "elgamal_encrypted_blowfish_key": elgamal_encrypted_blowfish_key,
+    #         "msg": encrypted_message,
+    #         "dig_sign_elgamal_key": digitally_signed_elgamal_key,
+    #         "dig_sign_blowfish_message": digitally_signed_blowfish_message
+    #     }
+    #
+    #     email_id = uuid.uuid4()
+    #     email_file_path = f'resources/emails/{self.user}/email{str(email_id)[-4:]}.json'
+    #     save_message_to_json(header, email_file_path)
+    #     print("Email sent")
 
     def send_credentials(self):
         credentials = {
@@ -294,10 +340,38 @@ class EmailSenderGUI(QWidget):
     def string_to_int_representation(self, input_string):
         return int(''.join(f"{ord(c):03}" for c in input_string))
 
+    # def send_email(self):
+    #     print("Starting email sending process...")
+    #     if not self.email_thread.isRunning():
+    #         self.email_thread.start()
     def send_email(self):
         print("Starting email sending process...")
-        if not self.email_thread.isRunning():
-            self.email_thread.start()
+        self.load_other_user_credentials()
+
+        # Collect the details needed for the email
+        message_details = {
+            "subject": self.subjectLineEdit.text(),
+            "message": self.bodyTextEdit.toPlainText()
+        }
+
+        # Create a new worker each time
+        self.worker = EmailWorker(message_details, self.elgamal_decrypter, self.rabin_signer, self.user,
+                                  self.toLineEdit)
+
+        # Create a new thread each time
+        self.email_thread = QThread()
+
+        # Move the worker to the thread
+        self.worker.moveToThread(self.email_thread)
+
+        # Connect signals
+        self.email_thread.started.connect(self.worker.send_email)
+        self.worker.finished.connect(self.email_thread.quit)  # Thread will quit when work is done
+        self.worker.finished.connect(self.worker.deleteLater)  # Clean up the worker after
+        self.email_thread.finished.connect(self.email_thread.deleteLater)  # Clean up the thread after
+
+        # Start the thread
+        self.email_thread.start()
 
     def load_other_user_credentials(self):
         # Determine the other user based on the current user
