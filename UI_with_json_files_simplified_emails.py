@@ -215,7 +215,8 @@ class EmailSenderGUI(QWidget):
                             if email.get('to') == self.user:
 
                                 if 'decrypted' in email:
-                                    email_entry = f"(secure) {email.get('subject')} - from {email.get['from']}"
+                                    print("found decrypted email")
+                                    email_entry = f"(secure) {email['subject']} - from {email['from']}"
                                     list_item = QListWidgetItem(email_entry)
                                     list_item.setData(Qt.ItemDataRole.UserRole, file_path)  # Store the file path
                                     self.emailListWidget.addItem(list_item)
@@ -242,6 +243,8 @@ class EmailSenderGUI(QWidget):
                                     email_entry = f"(secure) {decrypted_json_message['subject']} - from {email['from']}"
 
                                     new_contents = {
+                                        'decrypted': True,
+                                        "to": email['to'],
                                         'from': email['from'],
                                         'subject': decrypted_json_message['subject'],
                                         'message': decrypted_json_message['message']
@@ -339,7 +342,7 @@ def clean_email_resources():
 
 def main():
     app = QApplication(sys.argv)
-    app.aboutToQuit.connect(clean_email_resources)
+    # app.aboutToQuit.connect(clean_email_resources)
     # Simulate some load time
     # app.processEvents()
     window = EmailSenderGUI()

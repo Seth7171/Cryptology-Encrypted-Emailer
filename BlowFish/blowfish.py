@@ -422,6 +422,7 @@ def decrypt_text_with_blowfish(encrypted_base64):
     print(decrypted_data)
     return decrypted_data.decode('utf-8')
 
+
 def encrypt_text_with_blowfish(text):
     text_bytes = text.encode('utf-8')
     padded_text_bytes = pkcs7_pad(text_bytes, 8)  # Blowfish block size is 8 bytes
@@ -440,8 +441,11 @@ def encrypt_text_with_blowfish(text):
     print(encrypted_base64)
     return encrypted_base64
 
+
 def key_as_int():
     return int.from_bytes(key, 'big')
+
+
 def int_to_key(integer, key_size=56):
     # The number of bytes is the key_size. The 'big' argument specifies the byte order.
     return integer.to_bytes(key_size, 'big')
