@@ -1,5 +1,5 @@
 # cryptology-encrypted-emailer
-A program to send encrypted emails using cobra cypher
+A program to send encrypted emails using Blowfish OFB mode with key encryption ECC-El Gamal and Rabin signature
 
 
 ## Key generation
@@ -14,9 +14,3 @@ A program to send encrypted emails using cobra cypher
 Note: 
   * Currently only the body block is being encrypted and sent.
   * Server receives the encrypted message and does not decrypt it since it should be sent to another client.
-
-# To-do:
-* Add key swapping between two clients.
-  * For example when a client connects it sends everyone its public key (after EC-Elgamal & rabin)
-* Add addressing clients using e-mail address to emulate e-mail sending
-* Add Received messages window in UI_with_websocket_client.py 
